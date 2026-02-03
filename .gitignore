@@ -1,0 +1,51 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build/coverage
+dist/
+build/
+coverage/
+
+# LaTeX
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.run.xml
+*.synctex.gz
+
+# Project-specific LaTeX outputs
+docs/proposal/*.aux
+docs/proposal/*.bbl
+docs/proposal/*.bcf
+docs/proposal/*.blg
+docs/proposal/*.fdb_latexmk
+docs/proposal/*.fls
+docs/proposal/*.log
+docs/proposal/*.out
+docs/proposal/*.run.xml
+docs/proposal/*.synctex.gz
