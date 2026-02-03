@@ -1,0 +1,116 @@
+\documentclass{proposal}
+
+% Add your bibliography file
+\usepackage[style=ieee,backend=biber]{biblatex}
+\addbibresource{references.bib}
+\nocite{*}
+
+\title{EdgeTrust-Offload: A Zero-Trust Framework for Secure, Dynamic Task Offloading in Congested Edge Clusters}
+\author{Wanghley Soares Martins \\ ECE 654: Edge Computing}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{The Core Idea}
+
+Edge computing promises sub-millisecond latency by processing data near its source, yet this proximity creates a critical vulnerability: traditional offloading architectures assume implicit trust within the local network. This assumption is increasingly untenable as edge deployments handle sensitive data—from biometric signals to industrial telemetry—that demand cryptographic protection regardless of network topology.
+
+This project proposes \textbf{EdgeTrust-Offload}, a security-aware scheduler for IoT-to-Edge task offloading that quantifies the performance trade-off between Zero-Trust Architecture (ZTA) overhead and computational offloading benefits. The system comprises three components:
+
+\begin{enumerate}
+    \item \textbf{Security Layer:} A Zero-Trust network overlay using \textbf{Tailscale/WireGuard} to establish mutual TLS (mTLS) and identity-based access control between all nodes, eliminating the need for complex service mesh deployments.
+    \item \textbf{Workload Engine:} Signal processing tasks (1024-point FFT, FIR filtering) executing on an \textbf{ESP32-S3} sensor node with optional offloading to an \textbf{NVIDIA Jetson} accelerator within the Aura home-server rack.
+    \item \textbf{Decision Engine:} A Python-based scheduler implementing a cost function $C = \alpha \cdot T_{exec} + \beta \cdot T_{network} + \gamma \cdot E_{crypto}$ that dynamically selects between local processing and secure offloading based on real-time network jitter, encryption overhead, and task complexity.
+\end{enumerate}
+
+\begin{center}
+    \framebox[0.85\textwidth]{\rule{0pt}{80pt} \textbf{[System Architecture Diagram:} ESP32-S3 $\leftrightarrow$ WireGuard Tunnel $\leftrightarrow$ Aura Rack (Jetson/RPi)\textbf{]}}
+\end{center}
+
+The core innovation lies in identifying the \textbf{security-performance crossover point}—the network latency threshold at which ZTA overhead renders offloading slower than local execution on resource-constrained MCUs.
+
+\whysection%
+    {Traditional computation offloading research assumes a trusted LAN environment, ignoring the ``security tax'' of encryption and authentication. This project benchmarks ZTA overhead in edge environments where raw sensor data (e.g., health metrics, industrial signals) requires protection under regulations like HIPAA and GDPR. By quantifying when security overhead exceeds offloading benefits, we establish design guidelines for secure edge systems \cite{nist_zta, mao2017survey}.}% Why this
+    {NIST SP 800-207 has established Zero-Trust as the federal standard for network security, yet edge computing deployments lag in adoption due to perceived performance penalties. Simultaneously, hardware-accelerated cryptography on chips like the ESP32-S3 (with dedicated AES and SHA accelerators) has reached maturity. We must determine whether modern crypto hardware has closed the performance gap sufficiently for ZTA adoption at the edge \cite{shi2016edge, satyanarayanan2017emergence}.}% Why now
+    {My background combines computer engineering at Duke with hands-on experience in custom PCB design for IoT platforms (ESP32, Orange Pi) and research in non-contact capacitive sensing requiring real-time signal processing. I have deployed the Aura home-server rack infrastructure that serves as the testbed for this project, providing direct access to heterogeneous edge hardware.}% Why me
+    {ECE 654's emphasis on low-latency architectures and heterogeneous edge clusters provides the ideal framework for this systems-level performance analysis. The findings directly address the course's central question: how do we architect edge systems that balance competing constraints of latency, security, and resource efficiency?}% Why you
+
+\section{Related Work}
+
+The intersection of Zero-Trust security and edge computing offloading represents an emerging research frontier spanning three domains:
+
+\textbf{Zero-Trust Architecture Foundations.} NIST SP 800-207 \cite{nist_zta} establishes the canonical ZTA model requiring continuous verification of all network actors. Rose et al. \cite{rose2020zero} extend this to distributed systems, while Kindervag's original work \cite{kindervag2010no} at Forrester defined the ``never trust, always verify'' paradigm. However, these frameworks target enterprise networks with abundant computational resources, leaving edge-specific implementations unexplored.
+
+\textbf{Computation Offloading in Edge Computing.} Mao et al. \cite{mao2017survey} provide a comprehensive survey of mobile edge computing offloading strategies, identifying latency minimization and energy efficiency as primary optimization targets. Kumar et al. \cite{kumar2013cloud} established foundational models for offloading decisions, while recent work by Wang et al. \cite{wang2020convergence} addresses deep learning inference offloading. Lin et al. \cite{lin2019computation} specifically examine IoMT (Internet of Medical Things) offloading where data sensitivity intersects with latency requirements. Critically, none of these works incorporate cryptographic overhead into their decision models.
+
+\textbf{Secure Edge Communication.} Tailscale's WireGuard implementation \cite{donenfeld2017wireguard} offers cryptographically verified mesh networking with minimal configuration overhead—a significant advantage over traditional IPsec or service mesh approaches. Cloudflare's Magic WAN \cite{cloudflare2021magic} demonstrates enterprise-scale secure edge connectivity, while NVIDIA's work on TensorRT \cite{nvidia2019tensorrt} enables high-throughput inference that could offset security overhead through accelerated processing.
+
+\textbf{Gap Identification.} Existing literature treats security and offloading as orthogonal concerns. This project bridges this gap by developing an integrated cost model that treats cryptographic overhead as a first-class scheduling constraint alongside network latency and computational complexity.
+
+\section{Methodology \& Validation}
+
+\subsection{Hardware Testbed: The Aura Rack}
+
+The experimental platform comprises a 10-inch 9U rack (``Aura'') containing heterogeneous compute nodes:
+
+\begin{itemize}
+    \item \textbf{Worker Nodes:} NVIDIA Jetson Nano (128 CUDA cores), Raspberry Pi 4 (4GB), Orange Pi 4A
+    \item \textbf{Client Node:} ESP32-S3 (T-Display) with hardware AES-256 and SHA-256 accelerators
+    \item \textbf{Network Infrastructure:} TP-Link TL-WR1502X router, TL-SG108 gigabit switch
+    \item \textbf{Security Overlay:} Tailscale mesh network with WireGuard tunnels
+\end{itemize}
+
+\subsection{Experimental Scenarios}
+
+We evaluate four configurations to isolate security overhead effects:
+
+\begin{enumerate}
+    \item \textbf{Baseline (Local):} 1024-point FFT executed entirely on ESP32-S3 using ESP-DSP library. Measures $T_{local}$ and $E_{local}$.
+    \item \textbf{Insecure Offload:} Task offloaded over raw TCP/IP to Jetson. Establishes $T_{network}^{insecure}$ baseline.
+    \item \textbf{Secure Offload (ZTA):} Identical offloading through Tailscale/WireGuard tunnel. Measures $T_{network}^{secure}$ including encryption/decryption overhead.
+    \item \textbf{Secure + Congested:} ZTA offloading with synthetic network impairment using Linux \texttt{tc} (traffic control) to inject 10-100ms jitter and 1-10\% packet loss.
+\end{enumerate}
+
+\subsection{Metrics}
+
+\begin{itemize}
+    \item \textbf{End-to-End Latency:} $T_{e2e} = T_{serialize} + T_{encrypt} + T_{transmit} + T_{decrypt} + T_{compute} + T_{return}$
+    \item \textbf{Security Overhead Ratio:} $R_{sec} = T_{e2e}^{secure} / T_{e2e}^{insecure}$
+    \item \textbf{Crossover Point:} Network latency $L^*$ where $T_{e2e}^{secure}(L^*) = T_{local}$
+    \item \textbf{Throughput:} Tasks completed per second under sustained load
+\end{itemize}
+
+\section{Project Plan \& Timeline}
+
+\begin{table}[ht]
+    \centering
+    \begin{tabular}{@{}lll@{}}
+        \toprule
+        \textbf{Week} & \textbf{Deliverable} & \textbf{Status} \\ \midrule
+        Week 1-2 (Feb 7-21) & Literature review; Tailscale deployment on Aura rack & Proposal \\
+        Week 3-4 (Feb 22-Mar 7) & ESP32-S3 FFT implementation; baseline measurements & Development \\
+        Week 5-6 (Mar 8-21) & Offloading protocol; insecure/secure comparison & Progress Report \\
+        Week 7-8 (Mar 22-Apr 4) & Scheduler decision engine; congestion experiments & Testing \\
+        Week 9-10 (Apr 5-18) & Analysis; visualization; final documentation & Final Report \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\section{Risk Management}
+
+\begin{itemize}
+    \risk{ESP32-S3 memory limitations (512KB SRAM) may constrain encryption buffer sizes for large payloads.}{Segment FFT data into 256-sample chunks; utilize hardware crypto accelerators to minimize software memory footprint; fall back to FIR filtering (lower memory) if FFT proves infeasible.}
+    \risk{High network jitter (>50ms) causing TCP retransmissions and measurement variance.}{Implement UDP-based transport with application-layer reliability; use median latency over 100 trials; characterize jitter distribution rather than assuming Gaussian.}
+    \risk{Tailscale coordination server dependency introduces external failure mode.}{Deploy Headscale (self-hosted coordination server) on Aura rack for fully local operation; maintain fallback to direct WireGuard configuration.}
+    \risk{Thermal throttling on Jetson Nano under sustained crypto+compute load.}{Monitor junction temperature; implement active cooling; characterize performance degradation curves.}
+\end{itemize}
+
+\section{Duke Community Impact}
+
+This research directly supports Duke's strategic initiatives in secure IoT and edge computing. The validated security-performance models can inform the Duke Smart Home Program's sensor deployments, where student health and occupancy data require protection. The Aura rack testbed will remain available for future ECE 654 projects requiring heterogeneous edge infrastructure. Furthermore, the open-source scheduler implementation will be contributed to the Duke GitHub organization, enabling reproducibility and extension by subsequent research teams. The findings may also support Duke Health's exploration of edge-based medical device data processing, where HIPAA compliance necessitates Zero-Trust architectures but latency constraints demand careful optimization.
+
+\printbibliography
+
+\end{document}
