@@ -2,6 +2,7 @@
 
 % Add your bibliography file
 \usepackage[style=ieee,backend=biber]{biblatex}
+\renewcommand*{\bibfont}{\fontsize{9}{9.5}\selectfont}
 \addbibresource{references.bib}
 \nocite{*}
 
@@ -15,20 +16,20 @@
 
 \section{The Core Idea}
 
-Continuous physiological monitoring (ICU telemetry to wearable temperature tracking) creates time-series streams that must be processed under tight latency budgets. Edge computing can meet these deadlines, but most offloading assumes \emph{implicit trust within the local network}. For PHI under HIPAA \cite{act1996health} or sensor data under GDPR, that assumption fails.
+Edge computing lets sensor nodes offload heavy computation to nearby servers, saving time and energy. However, most offloading schemes assume every device on the local network can be trusted. When the data involved is protected health information (PHI) under HIPAA \cite{act1996health} or sensitive sensor streams under GDPR, that assumption is dangerous. Encrypting and authenticating every transaction---the Zero-Trust principle---adds overhead that may negate the benefit of offloading in the first place.
 
-This project builds an edge-trust offload strategy (Fig. \ref{fig:architecture}) that wraps each IoT-to-edge transaction in a Zero-Trust Architecture (ZTA) envelope and \emph{measures the cost}. An \textbf{ESP32-S3} runs two workloads: (1) a 1024-point FFT for ICU waveform analysis \cite{clifford2016false}; and (2) a 64-tap FIR filter for temperature smoothing \cite{tamura2018current}. Each task is executed locally or offloaded through a secure tunnel to an NVIDIA Jetson Nano worker.
+\textbf{The question we answer:} At what network latency does the security overhead of Zero-Trust make offloading \emph{slower} than just computing on the sensor itself?
 
-The system comprises three tightly coupled components:
+To answer this, we build \textbf{EdgeTrust-Offload} (Fig.~\ref{fig:architecture}), a testbed and decision framework with three components:
 
 \begin{enumerate}
-    \item \textbf{Security Layer.} Tailscale/WireGuard \cite{donenfeld2017wireguard} enforces mutual authentication (mTLS) and encrypted tunnels between node pairs.
-    \item \textbf{Continuous Sensing Engine.} ESP32-S3 pipelines: (i) 256\,Hz ECG samples for FFT analysis and (ii) 1\,Hz DS18B20 readings for FIR smoothing.
-    \item \textbf{Adaptive Scheduler.} A Python decision engine evaluates
+    \item \textbf{Security Layer.} Every packet between devices travels through a Tailscale/WireGuard \cite{donenfeld2017wireguard} encrypted tunnel with mutual authentication---no implicit trust.
+    \item \textbf{Sensing \& Workload Engine.} An ESP32-S3 microcontroller continuously produces two representative workloads: a 1024-point FFT on a 256\,Hz synthetic ECG stream (modeling ICU waveform analysis \cite{clifford2016false}) and a 64-tap FIR filter on a 1\,Hz DS18B20 temperature stream (modeling thermal drift compensation \cite{tamura2018current}).
+    \item \textbf{Adaptive Scheduler.} For each task, a lightweight decision engine computes
     \[
         C = \alpha \cdot T_{\text{exec}} + \beta \cdot T_{\text{net}} + \gamma \cdot E_{\text{crypto}} + \delta \cdot P_{\text{loss}}
     \]
-    where $T_{\text{exec}}$ is compute time, $T_{\text{net}}$ is round-trip latency, $E_{\text{crypto}}$ is crypto overhead, and $P_{\text{loss}}$ is packet-loss rate. The scheduler chooses local execution when $C_{\text{offload}} > C_{\text{local}}$.
+    separately for local and remote execution. If the cost of secure offloading exceeds local cost ($C_{\text{offload}} > C_{\text{local}}$), the task runs on the ESP32-S3; otherwise it is sent through the encrypted tunnel to an NVIDIA Jetson Nano for faster processing.
 \end{enumerate}
 
 \begin{center}
@@ -40,12 +41,12 @@ The system comprises three tightly coupled components:
     \end{figure}
 \end{center}
 
-The core goal is the \textbf{crossover point}~($L^*$): the maximum network latency where secure offloading remains faster than local ESP32 execution. We quantify crypto overhead and determine when offloading to the Jetson Nano still makes sense. No prior work measures this threshold for simple IoT devices processing continuous health sensor data.
+The primary deliverable is the \textbf{crossover point}~$L^*$: the network latency at which the encryption and authentication overhead of Zero-Trust makes offloading exactly as slow as local execution. Below $L^*$, offloading saves time; above it, the sensor should compute locally. No prior work has measured this threshold for resource-constrained IoT devices running continuous health-adjacent workloads.
 
 \whysection%
-    {Offloading work optimizes latency and energy but ignores the ``security tax'' \cite{mao2017survey}. For HIPAA/FERPA deployments this is risky. We quantify when ZTA overhead exceeds gains and deliver rules: \emph{offload iff} $L < L^*$ \cite{nist_zta, lin2019computation}.}% Why this
-    {NIST SP 800-207 formalized ZTA \cite{nist_zta}; MCU crypto accelerators have matured \cite{shi2016edge}; and Duke Health/Smart Home are exploring privacy-sensitive edge sensing \cite{satyanarayanan2017emergence, dunn2018wearables}. The question is \emph{when} ZTA is practical.}% Why now
-    {We have PCB/ESP32 experience, real-time sensing background, and the Aura rack testbed. Tailscale is already deployed and WireGuard throughput validated, reducing ramp-up risk, with a strong biomedical focus.}% Why me
+    {Every offloading study optimizes latency or energy but ignores the cost of encryption \cite{mao2017survey}. In HIPAA/FERPA environments, unencrypted offloading is not an option. We produce the missing design rule: \emph{offload if and only if} network latency $L < L^*$, giving architects a concrete threshold \cite{nist_zta, lin2019computation}.}% Why this
+    {Three trends make this timely: NIST SP 800-207 established Zero-Trust as the federal standard \cite{nist_zta}; hardware crypto accelerators on MCUs like the ESP32-S3 have closed the performance gap \cite{shi2016edge}; and Duke Health/Smart Home need privacy-preserving edge sensing today \cite{satyanarayanan2017emergence, dunn2018wearables}.}% Why now
+    {We have hands-on ESP32/PCB experience, a real-time sensing research background, and the fully wired Aura rack testbed with Tailscale already running---minimizing ramp-up time. Our biomedical interests directly motivate the health-sensing workloads.}% Why me
     {ECE 654 centers on low-latency, heterogeneous edge architectures---precisely the context where security overhead is most consequential. The crossover-point analysis directly answers the course's motivating question: \emph{how do we architect edge systems that balance latency, security, and resource efficiency?} The findings and open-source code will be contributed back to Duke's ECE infrastructure for future student projects.}% Why you
 
 \section{Related Work}
@@ -61,9 +62,11 @@ Clifford et al.\ \cite{clifford2016false} show ICU alarms benefit from edge-loca
 \textbf{Secure Edge Communication.}
 Donenfeld \cite{donenfeld2017wireguard} introduces WireGuard; Tailscale builds a user-space mesh with identity-based access; Cloudflare's Magic WAN \cite{cloudflare2021magic} scales secure edge connectivity; and NVIDIA's TensorRT \cite{nvidia2019tensorrt} accelerates inference.
 
-\textbf{Gap.} Security and offloading are treated as orthogonal. We treat cryptographic cost as a \emph{first-class scheduling constraint} alongside latency and compute time on representative sensor workloads.
+\textbf{Gap.} No existing work models cryptographic overhead as part of the offload decision. We are the first to treat it as a \emph{first-class scheduling variable} and empirically measure its impact on real IoT hardware with health-representative sensor workloads.
 
 \section{Methodology \& Validation}
+
+Our approach has four stages: (1)~build the testbed, (2)~measure local baselines, (3)~measure offloading with and without encryption, and (4)~sweep network conditions to find $L^*$.
 
 \subsection{Hardware Testbed: The Aura Rack}
 
@@ -78,23 +81,25 @@ All experiments run on a physical 10-inch 9U rack (``Aura''):
 
 \subsection{Workloads}
 
+We chose two tasks that bracket the compute spectrum of typical health-sensor processing:
+
 \begin{enumerate}
-    \item \textbf{ICU Waveform Analysis (FFT).} A 1024-point single-precision FFT on a 256\,Hz ECG buffer, representing spectral feature extraction for arrhythmia detection \cite{clifford2016false}. Executed via ESP-DSP locally or NumPy/CuPy on the Jetson.
-    \item \textbf{Temperature Smoothing (FIR).} A 64-tap low-pass FIR filter on a 1\,Hz DS18B20 stream, modeling real-time thermal drift compensation for wearable health devices \cite{tamura2018current}. Lightweight enough to stress-test the overhead floor of ZTA.
+    \item \textbf{ICU Waveform Analysis (FFT).} A 1024-point FFT on a 256\,Hz ECG buffer---a compute-heavy task representative of arrhythmia feature extraction \cite{clifford2016false}. Run via ESP-DSP on the MCU or NumPy/CuPy on the Jetson.
+    \item \textbf{Temperature Smoothing (FIR).} A 64-tap low-pass FIR on a 1\,Hz DS18B20 stream---a lightweight task modeling thermal drift compensation \cite{tamura2018current}. Its small payload stresses the \emph{minimum} overhead floor of ZTA.
 \end{enumerate}
 
 \subsection{Experimental Configurations}
 
-We isolate each variable with four scenarios per workload:
+To isolate the effect of security overhead, we run each workload under four progressively harder scenarios:
 
 \begin{enumerate}
-    \item \textbf{Local Baseline.} Task executes on ESP32-S3. Measures $T_{\text{local}}$, $E_{\text{local}}$.
-    \item \textbf{Insecure Offload.} Raw TCP to Jetson (no encryption). Establishes $T_{\text{net}}^{\text{insecure}}$.
-    \item \textbf{Secure Offload (ZTA).} Offload through Tailscale/WireGuard. Measures $T_{\text{net}}^{\text{secure}}$ including encrypt/decrypt.
-    \item \textbf{Secure + Congested.} ZTA offload with Linux \texttt{tc}: 10--100\,ms jitter, 1--10\% packet loss.
+    \item \textbf{Local Baseline.} Task runs entirely on the ESP32-S3 (no network). Establishes $T_{\text{local}}$ and energy $E_{\text{local}}$.
+    \item \textbf{Insecure Offload.} Task sent via plain TCP to the Jetson Nano---no encryption. Shows pure network + compute cost.
+    \item \textbf{Secure Offload (ZTA).} Same path, but through the WireGuard tunnel. The difference from (2) isolates crypto overhead.
+    \item \textbf{Secure + Congested.} ZTA offload under synthetic impairment (Linux \texttt{tc}: 10--100\,ms jitter, 1--10\% loss) to model real hospital Wi-Fi.
 \end{enumerate}
 
-Each configuration runs \textbf{500 trials}; we report median, 95th-percentile, and max latency.
+Each scenario runs \textbf{500 trials}; we report median, 95th-percentile, and max latency.
 
 \subsection{Metrics}
 
@@ -142,9 +147,9 @@ Each configuration runs \textbf{500 trials}; we report median, 95th-percentile, 
 
 \section{Duke Community Impact}
 
-This work connects to two Duke initiatives. The \textbf{Duke Smart Home Program} deploys residential sensors; our crossover-point models guide when ZTA overhead is acceptable for FERPA-protected data. \textbf{Duke Health} is exploring edge processing of bedside telemetry; our empirical $L^*$ thresholds provide device-class guidance \cite{dunn2018wearables}.
+This work benefits two Duke initiatives. The \textbf{Duke Smart Home Program} uses residential sensors whose data falls under FERPA; our $L^*$ thresholds tell architects exactly when Zero-Trust overhead is acceptable. \textbf{Duke Health} is piloting edge processing of bedside telemetry (pulse oximetry, continuous temperature) \cite{dunn2018wearables}; our results provide the first device-class-specific latency guidance for HIPAA-compliant offloading.
 
-All code (scheduler, firmware, analysis notebooks) will be released on the Duke GitHub organization. The Aura rack will remain available for future ECE 654 cohorts, and the latency dataset will serve as a benchmark for secure-offloading research.
+All code, firmware, and analysis notebooks will be open-sourced on the GitHub\footnote{All code is available at \url{https://github.com/wanghley/edge-trust-offload}}. The Aura rack remains available for future ECE 654 cohorts, and the latency dataset will serve as a reusable benchmark.
 
 \printbibliography
 

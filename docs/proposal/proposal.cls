@@ -6,7 +6,7 @@
 
 % --- Required Packages ---
 \RequirePackage[utf8]{inputenc}
-\RequirePackage[margin=0.75in]{geometry}
+\RequirePackage[margin=0.5in]{geometry}
 \RequirePackage{titlesec}
 \RequirePackage{enumitem}
 \RequirePackage{booktabs}
@@ -14,14 +14,17 @@
 \RequirePackage{xcolor}
 \RequirePackage{hyperref}
 \RequirePackage{amsmath}
+\RequirePackage{etoolbox}
 
 % --- Styling ---
 \titleformat{\section}{\large\bfseries\uppercase}{}{0pt}{}[\titlerule]
 \titleformat{\subsection}{\bfseries}{}{0pt}{}
-\titlespacing*{\section}{0pt}{1.5ex plus 1ex minus .2ex}{1ex plus .2ex}
+\titlespacing*{\section}{0pt}{1.2ex plus 1ex minus .2ex}{1ex plus .2ex}
 
-\setlength{\parskip}{0.6em}
+\setlength{\parskip}{0.25em}
 \setlength{\parindent}{0pt}
+\setlist{nosep}
+
 
 % --- Custom Command for the "Four Whys" ---
 \newcommand{\whysection}[4]{%
