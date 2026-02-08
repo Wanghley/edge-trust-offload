@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this project, please cite it."
+title: "EdgeTrust-Offload: A Zero-Trust Framework for Secure, Dynamic Task Offloading in Congested Edge Clusters"
+version: 0.1.0
+date-released: 2025-02-07
+authors:
+  - family-names: "Soares Martins"
+    given-names: "Wanghley"
+    orcid: "0000-0002-5110-4024"
+repository-code: "https://github.com/Wanghley/edge-trust-offload"
+license: "MIT"
+keywords:
+  - "edge computing"
+  - "zero trust"
+  - "task offloading"
+  - "wireguard"
+  - "tailscale"
