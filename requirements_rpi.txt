@@ -13,9 +13,9 @@ httptools==0.7.1
 idna==3.11
 kaggle==1.7.4.5
 kagglehub==0.3.13
-numpy==2.0.2
+numpy>=1.26.0
 packaging==26.0
-pandas==2.3.3
+pandas>=2.1.0
 protobuf==6.33.6
 psutil==7.2.2
 pydantic==2.12.5
