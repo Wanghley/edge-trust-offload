@@ -1,0 +1,36 @@
+# EdgeTrust-Offload — Python dependencies
+# Install on Raspberry Pi with:
+#   pip install -r requirements.txt
+#
+# For ARM64 / armv7l wheels use --extra-index-url if needed:
+#   pip install -r requirements.txt \
+#       --extra-index-url https://www.piwheels.org/simple
+
+# ── Web framework ───────────────────────────────────────────────────────────
+fastapi>=0.111.0,<1.0.0          # async REST framework
+uvicorn[standard]>=0.29.0,<1.0.0 # ASGI server (includes websockets, httptools)
+
+# ── Data I/O ────────────────────────────────────────────────────────────────
+h5py>=3.11.0,<4.0.0              # HDF5 read — matches scripts/setup_data.py usage
+pandas>=2.2.0,<3.0.0             # DataFrame helpers for structured dtype datasets
+numpy>=1.26.0,<3.0.0             # numerical core (shared with client/main.py)
+
+# ── Inference runtimes (edge_tasks.py) ──────────────────────────────────────
+# TFLite runtime — install on Raspberry Pi using the piwheels index above.
+# On x86/Mac the package is named differently; install one of:
+#   pip install tflite-runtime          (ARM/Pi wheels)
+#   pip install tensorflow              (x86 dev machine, includes tflite)
+tflite-runtime>=2.14.0; platform_machine=="aarch64" or platform_machine=="armv7l"
+
+# ONNX Runtime — cross-platform, preferred fallback on x86 dev machines.
+onnxruntime>=1.17.0,<2.0.0
+
+# ── Utilities ───────────────────────────────────────────────────────────────
+python-dotenv>=1.0.0             # .env support consistent with client/main.py
+psutil>=5.9.0                    # CPU / RAM metrics for benchmark logging
+requests>=2.31.0                 # HTTP client used by client/main.py
+
+# ── Optional — offline model training only (do NOT install on the Pi) ───────
+# tensorflow>=2.16.0             # heavy — only on dev workstation
+# tf2onnx>=1.16.0                # ONNX export from Keras
+# onnx>=1.16.0                   # ONNX model serialisation
