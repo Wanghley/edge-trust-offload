@@ -120,7 +120,7 @@ class WindowPayload(BaseModel):
     samples: List[float] = Field(
         ...,
         description="Exactly WINDOW_SIZE × n_channels samples (row-major flattened or 1-D)",
-        min_items=1,
+        min_length=1,
     )
     n_channels: Optional[int] = Field(
         None, description="Number of sEMG channels (auto-detected if omitted)"

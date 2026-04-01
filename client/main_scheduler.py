@@ -165,14 +165,18 @@ def execute_path_b_offload(window_data: dict) -> dict:
     packet_loss = False
     
     try:
-        req = requests.post(OFFLOAD_URL, json=payload, timeout=2.0)
+        headers = {"X-Device-ID": payload["device_id"]}
+        req = requests.post(OFFLOAD_URL, json=payload, headers=headers, timeout=2.0)
         t_net_end = time.perf_counter()
         if req.status_code == 200:
             res_json = req.json()
             processing_time_remote = res_json.get("compute_latency_ms", 5.0)
             network_latency = (t_net_end - t_net_start) * 1000 - processing_time_remote
             status = "success"
-    except requests.RequestException:
+        else:
+            log.warning(f"Offload failed with status {req.status_code}: {req.text}")
+    except requests.RequestException as e:
+        log.error(f"Network error during offload: {e}")
         # Jetson Nano potentially unreachable
         network_latency = (time.perf_counter() - t_net_start) * 1000
         packet_loss = True

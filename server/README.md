@@ -264,66 +264,36 @@ GPU total memory : 7644 MB
 
 ---
 
-## 8. Build the TensorRT Engine
+## 8. Build the "Heavy" Model
 
-The server loads a pre-built `.trt` engine file from `models/gesture_heavy.trt`.
-You need to convert the ONNX model to a TensorRT engine **on the Jetson itself**
-(engines are architecture-specific and cannot be transferred from x86).
+The server loads a pre-built `.trt` engine file from `models/gesture_heavy.trt`. You must generate the "Heavy" 1D-CNN architecture specified in the project requirements before starting the server.
 
-### Step 8a — Copy the ONNX model to the Jetson
+### Step 8a — Generate the ONNX model
 
-From your development machine (or RPi):
+On the Jetson, run the provided build script. This creates a schema-accurate but randomly initialized 1D-CNN model (256-unit hidden layers) for benchmarking.
 
 ```bash
-# Replace 100.1.1.4 with your actual Jetson Tailscale IP
-scp models/gesture_cnn.onnx user@100.1.1.4:~/edge-trust-offload/models/
+source .jetson/bin/activate
+python3 scripts/build_heavy_model.py
+# Output: models/gesture_heavy.onnx
 ```
 
-If you don't have a trained model yet, generate a placeholder ONNX file
-on your dev machine (requires `onnx` and `numpy`):
+### Step 8b — Convert to TensorRT Engine
+
+Convert the ONNX file to a high-speed engine optimized for the Orin's 128 CUDA cores.
 
 ```bash
-# On dev machine — generate a dummy ONNX for testing
-python3 - <<'EOF'
-import numpy as np, onnx
-from onnx import helper, TensorProto
-
-# Minimal graph: input → matmul → output
-X = helper.make_tensor_value_info("input", TensorProto.FLOAT, [1, 1024, 8])
-Y = helper.make_tensor_value_info("output", TensorProto.FLOAT, [1, 6])
-W = helper.make_tensor("W", TensorProto.FLOAT, [8192, 6],
-                        np.random.randn(8192, 6).astype(np.float32).tobytes())
-reshape = helper.make_node("Flatten", ["input"], ["flat"], axis=1)
-mm      = helper.make_node("Gemm", ["flat", "W"],  ["output"])
-graph   = helper.make_graph([reshape, mm], "gesture", [X], [Y], [W])
-model   = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
-onnx.save(model, "models/gesture_cnn.onnx")
-print("Saved models/gesture_cnn.onnx")
-EOF
-scp models/gesture_cnn.onnx user@100.1.1.4:~/edge-trust-offload/models/
-```
-
-### Step 8b — Build the TRT engine on the Jetson
-
-```bash
-# On the Jetson:
-cd ~/edge-trust-offload
-mkdir -p models
-
-# Convert ONNX → TensorRT engine
 # --fp16   : enables FP16 precision (uses Orin's Tensor Cores)
 # --workspace=512 : 512 MB GPU workspace during build
 trtexec \
-    --onnx=models/gesture_cnn.onnx \
+    --onnx=models/gesture_heavy.onnx \
     --saveEngine=models/gesture_heavy.trt \
     --fp16 \
-    --workspace=512 \
-    --verbose
+    --workspace=512
 ```
 
 > [!NOTE]
-> Building the engine takes **2–5 minutes** on the first run. Subsequent
-> server restarts load from the cached `.trt` file (instant load).
+> Building the engine takes **2–5 minutes**. Subsequent server restarts load from the cached `.trt` file instantly.
 
 > [!TIP]
 > To also enable INT8 (fastest, requires calibration data):
@@ -337,34 +307,27 @@ trtexec \
 
 ## 9. Configure the Server
 
-All configuration is done via **environment variables**. Create a `.env` file
-at the project root to keep them persistent:
+All configuration is done via **environment variables**. To prevent binding errors, the `.env` file should use your actual Tailscale IP.
 
 ```bash
 cd ~/edge-trust-offload
-cat > server/.env <<'EOF'
+
+# Detect your Tailscale IP automatically
+export MY_TS_IP=$(tailscale ip -4)
+
+cat > server/.env <<EOF
 # ── Network ──────────────────────────────────────────────────────
-# Your Jetson's Tailscale IP (run: tailscale ip -4)
-TAILSCALE_IP=100.1.1.4
+TAILSCALE_IP=$MY_TS_IP
 SERVER_PORT=8000
 
 # ── Zero-Trust Device Allowlist ───────────────────────────────────
-# Format: device_id:tailscale_ip,device_id2:tailscale_ip2
-# These MUST match the device_id field sent by main_scheduler.py
-ALLOWED_DEVICES=rpi-client-01:100.1.1.2,rpi-client-scheduler:100.1.1.2
+# format: <device_id>:<tailscale_ip>
+ALLOWED_DEVICES=rpi-client-scheduler:100.1.1.2,rpi-client-01:100.1.1.2
 EOF
 ```
 
 > [!IMPORTANT]
-> **Update `TAILSCALE_IP`** to the actual IP shown by `tailscale ip -4` on
-> your Jetson. If this is wrong, the server will bind to a non-existent
-> interface and fail silently.
-
-> [!IMPORTANT]
-> **Update `ALLOWED_DEVICES`** to include the exact `device_id` values your
-> Raspberry Pi sends in its JSON body (see `main_scheduler.py`, line ~150).
-> By default the scheduler uses `"rpi-client-scheduler"` — make sure it is
-> listed here alongside your RPi's Tailscale IP.
+> **Check your IP bind**: If the server fails with `Errno 99 (Cannot assign requested address)`, ensure `TAILSCALE_IP` matches the output of `tailscale ip -4`.
 
 Make the startup script executable:
 
