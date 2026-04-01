@@ -1,0 +1,31 @@
+# EdgeTrust-Offload — Jetson Nano server dependencies
+# Install with:
+#   pip install -r server/requirements.txt
+#
+# TensorRT, pycuda, and cupy are pre-installed via JetPack SDK.
+# Do NOT install them via pip unless you know what you're doing.
+
+# ── Web framework ────────────────────────────────────────────────────────────
+fastapi>=0.111.0,<1.0.0
+uvicorn[standard]>=0.29.0,<1.0.0
+
+# ── Data & numerics ──────────────────────────────────────────────────────────
+numpy>=1.26.0,<3.0.0
+psutil>=5.9.0
+
+# ── Pydantic (FastAPI peer dep, pin for Jetson Python 3.8 compat) ────────────
+pydantic>=2.0.0,<3.0.0
+
+# ── ONNX Runtime (fallback when TRT engine not built) ────────────────────────
+# On Jetson, use the CUDA-enabled wheel from NVIDIA:
+#   pip install onnxruntime-gpu  --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/
+# Or the generic CPU wheel for dev:
+onnxruntime>=1.17.0,<2.0.0
+
+# ── TensorRT Python bindings (installed by JetPack — listed for reference) ───
+# tensorrt          # DO NOT pip-install — comes with JetPack 4.x/5.x
+# pycuda            # DO NOT pip-install — depends on CUDA toolkit path
+
+# ── Optional: CuPy (CUDA-backed NumPy for rapid prototyping) ─────────────────
+# cupy-cuda11x      # JetPack 4.x  (CUDA 11)
+# cupy-cuda12x      # JetPack 5.x  (CUDA 12)
