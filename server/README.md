@@ -270,10 +270,11 @@ The server loads a pre-built `.trt` engine file from `models/gesture_heavy.trt`.
 
 ### Step 8a — Generate the ONNX model
 
-On the Jetson, run the provided build script. This creates a schema-accurate but randomly initialized 1D-CNN model (256-unit hidden layers) for benchmarking.
+On the Jetson, run the provided build script. This requires `torch` (and its dependencies) to be installed in your virtual environment.
 
 ```bash
 source .jetson/bin/activate
+pip install torch  # Install if not already present
 python3 scripts/build_heavy_model.py
 # Output: models/gesture_heavy.onnx
 ```
@@ -283,13 +284,13 @@ python3 scripts/build_heavy_model.py
 Convert the ONNX file to a high-speed engine optimized for the Orin's 128 CUDA cores.
 
 ```bash
-# --fp16   : enables FP16 precision (uses Orin's Tensor Cores)
-# --workspace=512 : 512 MB GPU workspace during build
-trtexec \
+# Use the absolute path if trtexec is not in your PATH
+# Note: For TensorRT 9.x/10.x+, use --memPoolSize=workspace:512 instead of --workspace
+/usr/src/tensorrt/bin/trtexec \
     --onnx=models/gesture_heavy.onnx \
     --saveEngine=models/gesture_heavy.trt \
     --fp16 \
-    --workspace=512
+    --memPoolSize=workspace:512
 ```
 
 > [!NOTE]
@@ -337,34 +338,33 @@ chmod +x server/startup.sh
 
 ---
 
-## 10. Smoke Test (Manual Run)
+### Step 10 — Smoke Test (Manual Run)
 
-Run the server interactively first to verify everything is wired up correctly.
+Run the server using the provided **startup script**, which automatically handles the Tailscale IP detection and CUDA environment setup.
 
 ```bash
 cd ~/edge-trust-offload
-source .jetson/bin/activate
 
-# Load env vars
-export $(grep -v '^#' server/.env | xargs)
+# Make the script executable
+chmod +x server/startup.sh
 
-# Start the server (Ctrl+C to stop)
-python server/compute_server.py
+# Launch the server (Ctrl+C to stop)
+./server/startup.sh
 ```
 
 Expected startup output:
 ```
-2026-04-01 10:00:00 [INFO] EdgeTrust_Jetson: ============================================================
-2026-04-01 10:00:00 [INFO] EdgeTrust_Jetson: EdgeTrust Compute Server — Jetson Nano
-2026-04-01 10:00:00 [INFO] EdgeTrust_Jetson: Bind address : 100.1.1.4:8000
-2026-04-01 10:00:00 [INFO] EdgeTrust_Jetson: TRT engine   : /home/.../models/gesture_heavy.trt
-2026-04-01 10:00:00 [INFO] EdgeTrust_Jetson: Allowlist    : ['rpi-client-01', 'rpi-client-scheduler']
-2026-04-01 10:00:00 [INFO] EdgeTrust_Jetson: TensorRT engine loaded from .../gesture_heavy.trt
-2026-04-01 10:00:00 [INFO] EdgeTrust_Jetson: TensorRTEngine ready | backend=tensorrt | n_channels=8
-INFO:     Started server process [12345]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://100.1.1.4:8000
+======================================================
+ EdgeTrust Compute Server — Jetson Nano
+ Tailscale IP : 100.x.x.x
+ Port         : 8000
+ Models dir   : /home/.../models
+ Allowlist    : rpi-client-scheduler:100.1.1.2
+======================================================
+Using virtual environment: .jetson
+2026-04-01 10:00:00 [INFO] EdgeTrust_Jetson: TensorRT engine loaded successfully.
+2026-04-01 10:00:00 [INFO] EdgeTrust_Jetson: TensorRTEngine ready | backend=tensorrt
+INFO:     Uvicorn running on http://100.x.x.x:8000
 ```
 
 ### Test the health endpoint from another Tailnet node

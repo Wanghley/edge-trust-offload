@@ -57,6 +57,17 @@ if command -v tailscale &>/dev/null; then
     fi
 fi
 
+# ── Environment Setup ──────────────────────────────────────────────────────────
+# Ensure CUDA binaries and Tegra driver libraries are in the path (standard on Jetson/JetPack)
+export PATH="/usr/local/cuda/bin:${PATH:-}"
+export LD_LIBRARY_PATH="/usr/lib/aarch64-linux-gnu/tegra:/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}"
+
 # ── Launch server ─────────────────────────────────────────────────────────────
 cd "${PROJECT_ROOT}"
-exec python server/compute_server.py
+# Automatically use the .jetson venv if it exists
+if [[ -f ".jetson/bin/python" ]]; then
+    echo "Using virtual environment: .jetson"
+    exec .jetson/bin/python server/compute_server.py
+else
+    exec python3 server/compute_server.py
+fi

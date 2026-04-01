@@ -23,12 +23,12 @@ import os
 import pathlib
 import numpy as np
 
-try:
-    import torch
-    import torch.nn as nn
-    HAS_TORCH = True
-except ImportError:
-    HAS_TORCH = False
+import torch
+import torch.nn as nn
+
+HAS_TORCH = True
+# Removed the try-except wrapper here to ensure clear ModuleNotFoundError
+# if the environment is not set up correctly.
 
 # Constants
 WINDOW_SIZE = 1024
@@ -90,10 +90,6 @@ class HeavyGestureModel(nn.Module):
         return x
 
 def build_and_export():
-    if not HAS_TORCH:
-        print("Error: torch not found. Please install it: pip install torch")
-        return
-
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     
     print(f"Building 'Heavy' gesture model with {N_CHANNELS} channels...")
