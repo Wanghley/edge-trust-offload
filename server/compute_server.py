@@ -57,6 +57,17 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import psutil
+
+# ---------------------------------------------------------------------------
+# Global CUDA / TensorRT imports to prevent Error 35 on Jetson Orin
+# ---------------------------------------------------------------------------
+try:
+    import tensorrt as trt
+    import pycuda.driver as pycuda_driver
+    import pycuda.autoinit
+    _TRT_AVAILABLE = True
+except ImportError:
+    _TRT_AVAILABLE = False
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -253,12 +264,12 @@ class TensorRTEngine:
     # ------------------------------------------------------------------
 
     def _try_load_trt(self, engine_path: pathlib.Path) -> None:
-        try:
-            tensorrt = importlib.import_module("tensorrt")
-            pycuda_driver = importlib.import_module("pycuda.driver")
-            pycuda_autoinit = importlib.import_module("pycuda.autoinit")  # noqa: F841
+        if not _TRT_AVAILABLE:
+            log.warning("TensorRT/pycuda not installed globally — will try ONNX.")
+            return
 
-            runtime = tensorrt.Runtime(tensorrt.Logger(tensorrt.Logger.WARNING))
+        try:
+            runtime = trt.Runtime(trt.Logger(trt.Logger.WARNING))
             with open(engine_path, "rb") as f:
                 engine_data = f.read()
             self._engine = runtime.deserialize_cuda_engine(engine_data)
@@ -266,8 +277,6 @@ class TensorRTEngine:
             self._pycuda = pycuda_driver
             self._backend = "tensorrt"
             log.info("TensorRT engine loaded from %s", engine_path)
-        except ModuleNotFoundError as e:
-            log.warning("TensorRT/pycuda not installed (%s) — will try ONNX.", e)
         except Exception as e:
             log.warning("TensorRT load failed: %s — will try ONNX.", e)
 
