@@ -1,0 +1,32 @@
+[
+  {
+    "scenario": "S4",
+    "complexity": "normal",
+    "n_trials": 100,
+    "n_success": 100,
+    "t_total_mean": 109.09455,
+    "t_total_std": 6.133018821714147,
+    "t_total_p50": 109.5275,
+    "t_total_p95": 118.84859999999999,
+    "t_total_p99": 125.28547000000003,
+    "t_exec_mean": 19.23173,
+    "t_net_mean": 83.77942999999999,
+    "e_crypto_mean": 23.442330000000002,
+    "l_star_mean": 1.37083
+  },
+  {
+    "scenario": "S4",
+    "complexity": "high",
+    "n_trials": 100,
+    "n_success": 100,
+    "t_total_mean": 109.61264,
+    "t_total_std": 7.069274024282833,
+    "t_total_p50": 109.798,
+    "t_total_p95": 122.8456,
+    "t_total_p99": 131.32912000000002,
+    "t_exec_mean": 18.346190000000004,
+    "t_net_mean": 84.28564,
+    "e_crypto_mean": 23.43928,
+    "l_star_mean": 0.7356900000000001
+  }
+]
