@@ -21,12 +21,15 @@ except (ImportError, ValueError):
     except ImportError:
         HAS_EDGE_TASKS = False
 
-# Fallback for tflite-runtime if it's not installed on the dev machine
-try:
-    import tflite_runtime.interpreter as tflite
-    HAS_TFLITE = True
-except ImportError:
-    HAS_TFLITE = False
+# tflite_runtime (Python ≤3.11) or ai_edge_litert (Python 3.12+, Google's replacement)
+HAS_TFLITE = False
+for _tflite_mod in ("tflite_runtime.interpreter", "ai_edge_litert.interpreter"):
+    try:
+        __import__(_tflite_mod)
+        HAS_TFLITE = True
+        break
+    except ImportError:
+        pass
 
 # ---------------------------------------------------------------------------
 # Logging & Configuration

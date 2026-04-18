@@ -389,16 +389,19 @@ def _load_tflite_interpreter(model_path: pathlib.Path, n_channels: int):
     Returns a tuple ``(interpreter, use_tflite: bool)`` where the second
     element indicates whether a real TFLite interpreter was returned.
     """
-    try:
-        tflite = importlib.import_module("tflite_runtime.interpreter")
-        interp = tflite.Interpreter(model_path=str(model_path))
-        interp.allocate_tensors()
-        log.info("TFLite model loaded from %s", model_path)
-        return interp, True
-    except ModuleNotFoundError:
-        log.debug("tflite_runtime not found — will try ONNX next.")
-    except Exception as exc:
-        log.warning("TFLite load failed (%s) — will try ONNX.", exc)
+    # Try tflite_runtime first, then ai_edge_litert (Google's Python 3.12+ replacement)
+    for module_name in ("tflite_runtime.interpreter", "ai_edge_litert.interpreter"):
+        try:
+            tflite = importlib.import_module(module_name)
+            interp = tflite.Interpreter(model_path=str(model_path))
+            interp.allocate_tensors()
+            log.info("TFLite model loaded via %s from %s", module_name, model_path)
+            return interp, True
+        except ModuleNotFoundError:
+            log.debug("%s not found — trying next.", module_name)
+        except Exception as exc:
+            log.warning("TFLite load via %s failed (%s) — trying next.", module_name, exc)
+    log.debug("No TFLite runtime available — will try ONNX next.")
     return None, False
 
 
