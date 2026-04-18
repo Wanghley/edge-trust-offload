@@ -100,19 +100,32 @@ def build_and_export():
     dummy_input = torch.randn(1, WINDOW_SIZE, N_CHANNELS)
     
     print(f"Exporting to ONNX: {OUTPUT_PATH}")
+    # dynamo=False forces the legacy TorchScript-based exporter, which reliably
+    # embeds all weights as ONNX initializers. The new dynamo exporter (default
+    # in PyTorch 2.4+) produces small graph-only files on Jetson when CUDA is
+    # unavailable, causing trtexec to fail with missing initializers.
     torch.onnx.export(
-        model, 
-        dummy_input, 
+        model,
+        dummy_input,
         str(OUTPUT_PATH),
         export_params=True,
         opset_version=17,
         do_constant_folding=True,
         input_names=['input'],
         output_names=['output'],
-        dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}}
+        dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}},
+        dynamo=False,
     )
-    
-    print("Success. Run 'trtexec' on your Jetson to convert this to a TensorRT engine:")
+
+    size_mb = OUTPUT_PATH.stat().st_size / 1e6
+    print(f"ONNX file size: {size_mb:.2f} MB  (expected ~1.7 MB)")
+    if size_mb < 0.5:
+        print("WARNING: file is suspiciously small — weights may not be embedded.")
+        print("  Try: pip install 'torch<2.4' or use torch.onnx.export with dynamo=False")
+    else:
+        print("Weights embedded correctly.")
+
+    print("\nNext step — run trtexec on your Jetson:")
     print(f"  trtexec --onnx={OUTPUT_PATH} --saveEngine={MODEL_DIR}/gesture_heavy.trt --fp16")
 
 if __name__ == "__main__":
