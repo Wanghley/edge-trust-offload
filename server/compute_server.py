@@ -88,6 +88,9 @@ log = logging.getLogger("EdgeTrust_Jetson")
 # ---------------------------------------------------------------------------
 TAILSCALE_IP: str = os.getenv("TAILSCALE_IP", "100.1.1.4")
 SERVER_PORT: int = int(os.getenv("SERVER_PORT", "8000"))
+# Set INSECURE_MODE=1 to allow plain LAN traffic (S2 baseline measurements only).
+# Never use in production — disables Tailscale IP enforcement and IP-match check.
+INSECURE_MODE: bool = os.getenv("INSECURE_MODE", "0") == "1"
 LOG_DIR: pathlib.Path = pathlib.Path(__file__).parent.parent / "logs"
 TELEMETRY_LOG: pathlib.Path = LOG_DIR / "jetson_telemetry.jsonl"
 MODEL_DIR: pathlib.Path = pathlib.Path(__file__).parent.parent / "models"
@@ -522,7 +525,7 @@ def verify_zero_trust(request: Request, device_id: str) -> None:
     expected_ip = ALLOWED_DEVICES[device_id]
     client_ip = _get_client_ip(request)
 
-    if client_ip != expected_ip:
+    if not INSECURE_MODE and client_ip != expected_ip:
         log.warning(
             "AUTH FAIL: device_id '%s' arrived from %s but is registered to %s",
             device_id,
@@ -645,8 +648,9 @@ async def enforce_tailscale_origin(request: Request, call_next):
     """
     client_ip = _get_client_ip(request)
 
-    # Allow loopback for health checks from the Jetson itself
-    if client_ip not in ("127.0.0.1", "::1") and not client_ip.startswith("100."):
+    # Allow loopback for health checks from the Jetson itself.
+    # INSECURE_MODE bypasses the Tailscale prefix check for S2 baseline measurements.
+    if not INSECURE_MODE and client_ip not in ("127.0.0.1", "::1") and not client_ip.startswith("100."):
         log.warning(
             "BLOCKED non-Tailscale IP %s → %s %s",
             client_ip,
