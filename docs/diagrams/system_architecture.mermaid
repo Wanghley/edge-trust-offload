@@ -1,0 +1,145 @@
+graph TB
+    %% ─────────────────────────────────────────
+    %% HARDWARE LAYER
+    %% ─────────────────────────────────────────
+    subgraph HW["🖥️  Physical Testbed — Gigabit Ethernet LAN (192.168.0.0/24)"]
+        direction LR
+
+        subgraph RPI["📦 Raspberry Pi 3B  (Client)"]
+            direction TB
+            RPI_CPU["ARM Cortex-A53 · 1.2 GHz · 1 GB RAM"]
+            RPI_OS["Raspberry Pi OS 64-bit · kernel 6.1"]
+            RPI_LAN["eth0 · 192.168.0.4"]
+            RPI_TS["tailscale0 · 100.114.225.52"]
+        end
+
+        subgraph JET["⚡ Jetson Orin Nano  (Edge Server)"]
+            direction TB
+            JET_CPU["ARM Cortex-A78AE · 1.5 GHz · 8 GB LPDDR5"]
+            JET_GPU["1024 Ampere CUDA cores · TensorRT FP16"]
+            JET_LAN["eth0 · 192.168.0.6"]
+            JET_TS["tailscale0 · 100.85.193.50"]
+        end
+
+        subgraph OPI["🔧 Orange Pi 3B  (Auxiliary)"]
+            direction TB
+            OPI_NET["tc netem — congestion injection"]
+            OPI_MON["network telemetry & monitoring"]
+        end
+    end
+
+    %% ─────────────────────────────────────────
+    %% NETWORK OVERLAY
+    %% ─────────────────────────────────────────
+    subgraph NET["🔒 Zero-Trust Network Overlay"]
+        direction LR
+        TS_CTRL["Tailscale Control Plane\n(coordination server)"]
+        WG["WireGuard Tunnel\nChaCha20-Poly1305 · Curve25519\n100.114.225.52 ↔ 100.85.193.50"]
+    end
+
+    RPI_TS <-->|"encrypted UDP"| WG
+    JET_TS <-->|"encrypted UDP"| WG
+    WG --- TS_CTRL
+
+    %% ─────────────────────────────────────────
+    %% SOFTWARE STACK — CLIENT
+    %% ─────────────────────────────────────────
+    subgraph SW_CLIENT["🧠 Client Software Stack  (RPi 3B)"]
+        direction TB
+        EMU["Sensor Emulator\nlocalhost:9000/get_window\nBHaM sEMG · 8ch · 1024 samples"]
+        SCHED["Adaptive Offloading Scheduler\nmain_scheduler.py"]
+        FEAT["Feature Extractor — edge_tasks.py\nMAV · ZCR · WL · RMS · VAR · SSC · IEMG · DomFreq\n→ 64-element vector per window"]
+        CNN_L["Local CNN  (TFLite INT8)\n3-layer 1D-CNN · ~2 ms"]
+        COST["Cost Model Decision Engine\nC_local  = α · T_exec_local\nC_offload = α · T_remote + β · T_net\n          + γ · E_crypto + δ · P_loss"]
+        LOG["Telemetry Logger\noffload_telemetry.csv\nT_total · T_exec · T_net · E_crypto · L*\nCPU% · RAM · payload_bytes"]
+    end
+
+    %% ─────────────────────────────────────────
+    %% SOFTWARE STACK — SERVER
+    %% ─────────────────────────────────────────
+    subgraph SW_SERVER["⚙️ Server Software Stack  (Jetson Orin Nano)"]
+        direction TB
+        API["FastAPI  —  compute_server.py\n0.0.0.0:8000\nPOST /api/v1/offload/fft\nGET  /health"]
+        MW1["Middleware: enforce_tailscale_origin\nrejects source IP ∉ 100.x.x.x"]
+        MW2["Middleware: verify_zero_trust\nX-Device-ID header × IP allowlist\n(ALLOWED_DEVICES env var)"]
+        INF["Inference Engine\nTensorRT FP16  →  ONNX Runtime  →  NumPy\n4-block 1D-CNN · ~18 ms steady"]
+        TELE["Server Telemetry  (tegrastats)\nGPU temp · RAM · power · compute_latency_ms"]
+    end
+
+    %% ─────────────────────────────────────────
+    %% EXPERIMENT RUNNER
+    %% ─────────────────────────────────────────
+    subgraph EXP["🧪 Experiment Runner  (run_experiments.py)"]
+        direction TB
+        S1["S1 — Local Execution\nNo network · RPi 3B computes locally\nn=100 trials × 2 complexity levels"]
+        S2["S2 — Insecure LAN Offload\nHTTP → 192.168.0.6:8000\nINSECURE_MODE=1 · WireGuard disabled"]
+        S3["S3 — Secure ZTA Offload\nHTTP → 100.85.193.50:8000\nFull Tailscale tunnel · mutual auth"]
+        S4L["S4-Light\n+10 ms delay / 3 ms jitter / 0.5% loss"]
+        S4M["S4-Medium\n+25 ms delay / 8 ms jitter / 2% loss"]
+        S4H["S4-Heavy\n+60 ms delay / 20 ms jitter / 5% loss"]
+        NETEM["tc netem\nsudo tc qdisc add dev tailscale0\nroot netem delay Xms Yms loss Z%"]
+    end
+
+    S4L --> NETEM
+    S4M --> NETEM
+    S4H --> NETEM
+
+    %% ─────────────────────────────────────────
+    %% ANALYSIS PIPELINE
+    %% ─────────────────────────────────────────
+    subgraph ANA["📊 Analysis Pipeline  (analyze_results.py)"]
+        direction TB
+        RAW["raw/*.jsonl\nper-trial records (n=100 each)"]
+        SUM["summary.json\nmean · std · p50 · p95 · p99\nper scenario × complexity"]
+        CROSS["crossover.json\nL* per experimental cell"]
+        P1["crossover_results.png\nmean + p95 bar charts"]
+        P2["congestion_sweep.png\n3-level netem sweep"]
+        P3["latency_cdf.png\nempirical CDFs"]
+        P4["security_overhead.png\nS3 − S2 measured vs modelled"]
+    end
+
+    RAW --> SUM
+    RAW --> CROSS
+    SUM --> P1 & P2 & P3 & P4
+
+    %% ─────────────────────────────────────────
+    %% DATA FLOW CONNECTIONS
+    %% ─────────────────────────────────────────
+    EMU -->|"1024×8 EMG window\n~172 KB JSON payload"| SCHED
+    SCHED --> COST
+    COST -->|"C_local ≤ C_offload\n→ stay local"| FEAT
+    FEAT --> CNN_L
+    COST -->|"C_offload < C_local\n→ offload"| WG
+    WG -->|"POST /api/v1/offload/fft"| MW1
+    MW1 --> MW2
+    MW2 --> INF
+    INF -->|"gesture label + compute_latency_ms"| WG
+    CNN_L --> LOG
+    INF --> LOG
+    LOG --> RAW
+
+    %% ─────────────────────────────────────────
+    %% SCENARIO ROUTING
+    %% ─────────────────────────────────────────
+    S1 -->|"local path only"| SW_CLIENT
+    S2 -->|"direct eth0"| RPI_LAN
+    RPI_LAN -->|"192.168.0.4 → 192.168.0.6"| JET_LAN
+    JET_LAN --> SW_SERVER
+    S3 -->|"Tailscale overlay"| NET
+    NET --> SW_SERVER
+    S4L & S4M & S4H -->|"Tailscale + netem"| NET
+
+    %% ─────────────────────────────────────────
+    %% STYLES
+    %% ─────────────────────────────────────────
+    classDef hw      fill:#1e3a5f,stroke:#4a9eff,color:#fff
+    classDef sw      fill:#1a3a2a,stroke:#4aff8c,color:#fff
+    classDef sec     fill:#3a1a1a,stroke:#ff6b6b,color:#fff
+    classDef exp     fill:#2a2a1a,stroke:#ffd700,color:#fff
+    classDef ana     fill:#2a1a3a,stroke:#cc88ff,color:#fff
+
+    class RPI_CPU,RPI_OS,RPI_LAN,RPI_TS,JET_CPU,JET_GPU,JET_LAN,JET_TS,OPI_NET,OPI_MON hw
+    class EMU,SCHED,FEAT,CNN_L,COST,LOG,API,INF,TELE sw
+    class MW1,MW2,WG,TS_CTRL sec
+    class S1,S2,S3,S4L,S4M,S4H,NETEM exp
+    class RAW,SUM,CROSS,P1,P2,P3,P4 ana

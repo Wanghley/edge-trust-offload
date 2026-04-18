@@ -1,0 +1,107 @@
+graph LR
+    %% ─────────────────────────────────────────
+    %% NODES (Client & Server)
+    %% ─────────────────────────────────────────
+    subgraph CLIENT["📦 Raspberry Pi 3B  (Client)\n100.114.225.52 / 192.168.0.4"]
+        C_APP["Offloading Scheduler\n+ Sensor Emulator"]
+    end
+
+    subgraph SERVER["⚡ Jetson Orin Nano  (Edge Server)\n100.85.193.50 / 192.168.0.6"]
+        S_APP["FastAPI + TensorRT\nInference Engine"]
+    end
+
+    subgraph NETEM_NODE["🔧 Orange Pi 3B  (Auxiliary)\nNetwork Congestion Injection"]
+        TC["tc netem\non tailscale0"]
+    end
+
+    %% ─────────────────────────────────────────
+    %% S1 — LOCAL
+    %% ─────────────────────────────────────────
+    subgraph S1["S1 — Local Execution"]
+        direction TB
+        S1_DESC["No offload · No network\n\nNormal: 19.7 ± 6.9 ms  p95 = 30.8 ms\nHigh:  132 ± 49.5 ms  p95 = 203.6 ms\n\n⚠️ High variance from thermal throttle\n   RPi 3B: 1.2 GHz → 600 MHz under load\n\nL* (normal) = 13.2 ms\nL* (high)   = 125.6 ms"]
+    end
+
+    C_APP -->|"LOCAL\n(compute only)"| S1
+
+    %% ─────────────────────────────────────────
+    %% S2 — INSECURE LAN
+    %% ─────────────────────────────────────────
+    subgraph S2["S2 — Insecure LAN Offload"]
+        direction TB
+        S2_DESC["HTTP via eth0 · No WireGuard\nINSECURE_MODE=1 on server\n\nNormal: 80.7 ± 5.8 ms\nHigh:   80.9 ± 5.9 ms\n\nRemote exec: ~17.5 ms  (constant)\nNet RTT:      ~78.9 ms  (JSON serial. bottleneck)\nCrypto:        0.0 ms\n\n⚠️ Same latency for both complexities:\n   server input tensor is always 1024×8"]
+    end
+
+    C_APP -->|"192.168.0.4\n→ 192.168.0.6:8000\n(raw TCP / HTTP)"| S2
+    S2 --> S_APP
+
+    %% ─────────────────────────────────────────
+    %% S3 — SECURE ZTA
+    %% ─────────────────────────────────────────
+    subgraph S3["S3 — Secure ZTA Offload"]
+        direction TB
+        S3_WIRE["WireGuard Tunnel\nChaCha20-Poly1305\nCurve25519 key exchange"]
+        S3_AUTH["ZTA Middleware\n① IP origin check: 100.x.x.x\n② Device-ID allowlist\n③ IP–device mapping"]
+        S3_DESC["Normal: 111.0 ± 6.6 ms\nHigh:   109.2 ± 6.4 ms\n\nRemote exec: ~18.5 ms\nNet RTT:      ~84.8 ms\nCrypto:       23.4 ms  (172 KB @ 15 MB/s × 2)\n\nZTA overhead vs S2:\n  Normal: +30.3 ms\n  High:   +28.3 ms\n\nL* → negative for normal workloads\n  (local always wins under ZTA)\nL* ≈ 88 ms for high workloads\n  (offloading wins: 109 ms vs 132 ms)"]
+    end
+
+    C_APP -->|"100.114.225.52\n→ 100.85.193.50:8000\n(WireGuard UDP)"| S3_WIRE
+    S3_WIRE --> S3_AUTH
+    S3_AUTH --> S3_DESC
+    S3_DESC --> S_APP
+
+    %% ─────────────────────────────────────────
+    %% S4 — CONGESTION SWEEP
+    %% ─────────────────────────────────────────
+    subgraph S4["S4 — Secure ZTA + Synthetic Congestion"]
+        direction TB
+
+        subgraph LIGHT["S4-Light"]
+            L_NETEM["tc netem\n+10 ms delay · 3 ms jitter · 0.5% loss"]
+            L_RES["Normal: 109.1 ± 6.1 ms  p95 = 118.8 ms\nHigh:   109.6 ± 7.1 ms  p95 = 122.8 ms"]
+        end
+
+        subgraph MED["S4-Medium"]
+            M_NETEM["tc netem\n+25 ms delay · 8 ms jitter · 2% loss"]
+            M_RES["Normal: 109.2 ± 7.6 ms  p95 = 124.1 ms\nHigh:   109.7 ± 6.3 ms  p95 = 120.0 ms"]
+        end
+
+        subgraph HEAVY["S4-Heavy"]
+            H_NETEM["tc netem\n+60 ms delay · 20 ms jitter · 5% loss"]
+            H_RES["Normal: 110.4 ± 8.4 ms  p95 = 125.7 ms\nHigh:   109.0 ± 7.2 ms  p95 = 121.0 ms"]
+        end
+
+        KEY["🔑 Key finding:\nMax mean delta across all levels = 1.4 ms\nApplication-layer serialization (172 KB JSON)\nand crypto (23.4 ms) create a latency floor\nthat tc netem cannot meaningfully elevate.\np95 widens slightly: +6.9 ms (normal) across levels."]
+    end
+
+    C_APP -->|"Tailscale + netem"| NETEM_NODE
+    NETEM_NODE --> TC
+    TC --> L_NETEM & M_NETEM & H_NETEM
+    L_NETEM --> L_RES --> S_APP
+    M_NETEM --> M_RES --> S_APP
+    H_NETEM --> H_RES --> S_APP
+
+    %% ─────────────────────────────────────────
+    %% STYLES
+    %% ─────────────────────────────────────────
+    classDef client  fill:#1e3a5f,stroke:#4a9eff,color:#fff
+    classDef server  fill:#1a3a2a,stroke:#4aff8c,color:#fff
+    classDef s1box   fill:#1e3a5f,stroke:#4a9eff,color:#fff
+    classDef s2box   fill:#1a3a1a,stroke:#4aff4a,color:#fff
+    classDef s3box   fill:#3a2a1a,stroke:#ffaa44,color:#fff
+    classDef s4light fill:#3a1a2a,stroke:#ff88aa,color:#fff
+    classDef s4med   fill:#3a1a1a,stroke:#ff6b6b,color:#fff
+    classDef s4heavy fill:#4a1a1a,stroke:#ff4444,color:#fff
+    classDef key     fill:#2a2a2a,stroke:#ffd700,color:#ffd700
+    classDef netem   fill:#2a1a2a,stroke:#cc88ff,color:#fff
+
+    class C_APP,CLIENT client
+    class S_APP,SERVER server
+    class S1_DESC s1box
+    class S2_DESC,S2 s2box
+    class S3_WIRE,S3_AUTH,S3_DESC s3box
+    class L_NETEM,L_RES s4light
+    class M_NETEM,M_RES s4med
+    class H_NETEM,H_RES s4heavy
+    class KEY key
+    class TC,NETEM_NODE netem

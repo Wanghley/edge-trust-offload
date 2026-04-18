@@ -1,0 +1,95 @@
+flowchart TD
+    START([🟢 New EMG Window Available\n8 channels · 1024 samples @ 2000 Hz\n~172 KB JSON payload])
+
+    START --> EMU
+
+    EMU["📡 Sensor Emulator\nGET localhost:9000/get_window\nreturns window_index + raw samples"]
+
+    EMU --> PROBE
+
+    PROBE["📶 Network State Measurement\n① TCP RTT probe → Jetson IP:port\n② Detect packet loss flag\n③ Estimate payload_size_bytes"]
+
+    PROBE --> CRYPTO
+
+    CRYPTO["🔐 Crypto Overhead Estimate\nE_crypto = 2 × payload_bytes / 15 MB/s\n≈ 23.4 ms for 172 KB payload\n(ChaCha20-Poly1305 on ARM Cortex-A53)"]
+
+    CRYPTO --> COST
+
+    COST["⚖️ Cost Model Evaluation\n\nC_local  = α · T_exec_local_ewma\n\nC_offload = α · T_exec_remote_est\n          + β · RTT_measured\n          + γ · E_crypto\n          + δ · P_loss_penalty\n\nL* = (C_local − α·T_remote − γ·E_crypto) / β"]
+
+    COST --> DECIDE{C_offload\n< C_local ?}
+
+    %% ── OFFLOAD BRANCH ──────────────────────
+    DECIDE -->|"YES\nOffload is cheaper"| PATH_B
+
+    PATH_B["🚀 Path B — Remote Offload\nHTTP POST → Jetson Orin Nano"]
+
+    PATH_B --> ROUTE{Scenario?}
+
+    ROUTE -->|S2: Insecure| LAN_SEND
+    ROUTE -->|S3/S4: Secure ZTA| TS_SEND
+
+    LAN_SEND["🔓 Direct LAN\n192.168.0.4 → 192.168.0.6:8000\nNo encryption · INSECURE_MODE=1"]
+
+    TS_SEND["🔒 Tailscale WireGuard\n100.114.225.52 → 100.85.193.50:8000\nChaCha20-Poly1305 encrypted UDP\n+ S4: tc netem congestion injected"]
+
+    LAN_SEND --> AUTH
+    TS_SEND  --> AUTH
+
+    AUTH["🛡️ ZTA Middleware  (server-side)\n\n① enforce_tailscale_origin\n   source IP ∈ 100.x.x.x ?\n\n② verify_zero_trust\n   X-Device-ID ∈ ALLOWED_DEVICES ?\n   registered IP matches request IP ?"]
+
+    AUTH -->|All checks pass| INFER
+    AUTH -->|Any check fails| FAIL
+
+    INFER["⚡ Jetson Orin Nano Inference\nTensorRT FP16  (primary)\n  → ONNX Runtime  (fallback)\n  → NumPy FFT    (fallback)\n\n4-block 1D-CNN · fixed input 1024×8\nStable ~18 ms regardless of complexity\nReturns: gesture label + compute_latency_ms"]
+
+    FAIL["⛔ 403 Forbidden\nHTTP 403 returned to client\nlog error + trigger local fallback"]
+
+    INFER --> RECV
+    FAIL  --> PATH_A_FB
+
+    RECV["📥 Receive Server Response\nt_exec_remote = compute_latency_ms\nt_net = (t_end − t_start) × 1000 − t_exec_remote"]
+
+    %% ── LOCAL BRANCH ────────────────────────
+    DECIDE -->|"NO\nLocal is cheaper"| PATH_A
+
+    PATH_A["🖥️ Path A — Local Execution\nRPi 3B ARM Cortex-A53"]
+
+    PATH_A --> FEAT
+
+    PATH_A_FB["🖥️ Path A (Fallback)\nOffload failed · execute locally"]
+    PATH_A_FB --> FEAT
+
+    FEAT["🔬 Feature Extraction  (edge_tasks.py)\nPer channel (×8):\n  MAV · ZCR · WL · RMS · Var\n  SSC · IEMG · DomFreq\n→ 64-element feature vector\n\nNormal:  1× pass  ≈ 17 ms\nHigh:    8× pass  ≈ 130 ms  ⚠️ thermal jitter"]
+
+    FEAT --> CNN_LOCAL
+
+    CNN_LOCAL["🤖 Local Gesture CNN\nTFLite INT8  /  onnxruntime\n3-layer 1D-CNN · ~2 ms\n6 classes: IndexFlex · MiddleFlex\nPinch · WristFlex · WristExt · Rest"]
+
+    %% ── MERGE & LOG ─────────────────────────
+    CNN_LOCAL --> TELELOG
+    RECV      --> TELELOG
+
+    TELELOG["📝 Telemetry Log  (per trial)\noffload_telemetry.csv  +  *.jsonl\n\ntimestamp   window_index   decision\nt_exec_local_ms          t_exec_remote_ms\nt_net_ms                 e_crypto_ms\nt_total_ms               l_star_ms\nc_local     c_offload     cpu_pct\nram_used_mb              payload_size_bytes"]
+
+    TELELOG --> EWMA
+
+    EWMA["📈 Update Local Baseline  (EWMA)\nT_exec_local_ewma =\n  0.8 × prev_estimate\n+ 0.2 × measured_t_exec_local\n\nUsed by Cost Model next window"]
+
+    EWMA --> START
+
+    %% ── STYLES ──────────────────────────────
+    style START     fill:#1e5f3a,stroke:#4aff8c,color:#fff
+    style DECIDE    fill:#3a3a1a,stroke:#ffd700,color:#fff
+    style ROUTE     fill:#3a3a1a,stroke:#ffd700,color:#fff
+    style AUTH      fill:#3a1a1a,stroke:#ff6b6b,color:#fff
+    style FAIL      fill:#5f1a1a,stroke:#ff4444,color:#fff
+    style TS_SEND   fill:#1a2a3a,stroke:#88ccff,color:#fff
+    style LAN_SEND  fill:#1a2a1a,stroke:#88ff88,color:#fff
+    style INFER     fill:#1a3a5f,stroke:#4a9eff,color:#fff
+    style PATH_A    fill:#1a3a5f,stroke:#4a9eff,color:#fff
+    style PATH_A_FB fill:#4a2a1a,stroke:#ff9944,color:#fff
+    style FEAT      fill:#1a3a2a,stroke:#4aff8c,color:#fff
+    style CNN_LOCAL fill:#1a3a5f,stroke:#4a9eff,color:#fff
+    style TELELOG   fill:#2a1a3a,stroke:#cc88ff,color:#fff
+    style EWMA      fill:#2a2a1a,stroke:#ffd700,color:#fff
