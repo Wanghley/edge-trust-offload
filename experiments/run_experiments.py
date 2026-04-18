@@ -447,7 +447,10 @@ class ExperimentRunner:
                     if scenario == "S1":
                         r = self._trial_local(trial, complexity)
                     else:
-                        host = self.args.jetson_ip
+                        # S2 goes via LAN (insecure_ip), S3/S4 via Tailscale (jetson_ip).
+                        # Linux routes automatically: destination 192.168.0.x → eth0,
+                        # destination 100.x.x.x → Tailscale interface.
+                        host = self.args.insecure_ip if scenario == "S2" else self.args.jetson_ip
                         r = self._trial_offload(scenario, trial, complexity, host)
                 except Exception as exc:
                     log.error(f"  Trial {trial} error: {exc}")
